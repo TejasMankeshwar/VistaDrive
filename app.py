@@ -2,9 +2,11 @@ import streamlit as st
 import folium
 from streamlit_folium import st_folium
 import osmnx as ox
+from streamlit_geolocation import streamlit_geolocation
 
 # Local imports
-from routing import NEIGHBORHOODS, get_road_graph, generate_loop_waypoints, calculate_scenic_route
+from routing import (NEIGHBORHOODS, get_road_graph, generate_loop_waypoints, 
+                     calculate_scenic_route, generate_kml, generate_google_maps_url)
 
 st.set_page_config(page_title="VistaDrive", layout="wide")
 
@@ -15,10 +17,18 @@ st.markdown("Generate long-drive loops within city limits, prioritizing wide and
 with st.sidebar:
     st.header("Route Settings")
     
-    neighborhood = st.selectbox(
-        "Starting Neighborhood (Pune)",
-        options=list(NEIGHBORHOODS.keys())
-    )
+    location_type = st.radio("Start Location", ["Current Location (GPS)", "Pre-defined Neighborhood"])
+    
+    selected_neighborhood = None
+    if location_type == "Current Location (GPS)":
+        st.markdown("Click below to fetch your current location:")
+        loc = streamlit_geolocation()
+    else:
+        selected_neighborhood = st.selectbox(
+            "Starting Neighborhood",
+            options=list(NEIGHBORHOODS.keys())
+        )
+        loc = None
     
     target_distance = st.slider(
         "Target Distance (km)",
@@ -41,14 +51,23 @@ def fetch_graph(center_point, dist):
     return get_road_graph(center_point, dist)
 
 if generate_btn:
-    center_point = NEIGHBORHOODS[neighborhood]
+    if location_type == "Current Location (GPS)":
+        if loc and loc.get('latitude') is not None and loc.get('longitude') is not None:
+            center_point = (loc['latitude'], loc['longitude'])
+            loc_name = "your location"
+        else:
+            st.error("Please allow location access and click the GPS button before generating the route.")
+            st.stop()
+    else:
+        center_point = NEIGHBORHOODS[selected_neighborhood]
+        loc_name = selected_neighborhood
     
     # Calculate required graph radius based on target distance
     # The loop roughly spans D/4 from the center, but diagonal can be larger.
     # Safe radius: D * 1000 / 2 meters
     graph_radius = max(10000, int((target_distance * 1000) / 2))
     
-    with st.spinner(f"Fetching road network around {neighborhood}... (Radius: {graph_radius}m)"):
+    with st.spinner(f"Fetching road network around {loc_name}... (Radius: {graph_radius}m)"):
         try:
             G = fetch_graph(center_point, dist=graph_radius)
         except Exception as e:
@@ -89,6 +108,30 @@ if generate_btn:
             
             # --- Map ---
             route_map = folium.Map(location=center_point, zoom_start=12)
+            
+            # --- Android Export ---
+            st.subheader("Export to Android")
+            exp_col1, exp_col2 = st.columns(2)
+            
+            # KML Download
+            kml_data = generate_kml(G, route_nodes)
+            exp_col1.download_button(
+                label="📥 Download Route (.kml)",
+                data=kml_data,
+                file_name="vistadrive_route.kml",
+                mime="application/vnd.google-earth.kml+xml",
+                help="Download this file and open it in Google Earth or Google My Maps on your Android phone."
+            )
+            
+            # Google Maps URL
+            gmaps_url = generate_google_maps_url(waypoints)
+            exp_col2.link_button(
+                "🗺️ Open in Google Maps", 
+                url=gmaps_url,
+                help="Opens Google Maps directions with the main waypoints. Note: Google may alter the exact streets between waypoints."
+            )
+            
+            st.markdown("---")
             
             # Plot the start point
             folium.Marker(

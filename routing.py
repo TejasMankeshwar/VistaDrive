@@ -2,6 +2,8 @@ import osmnx as ox
 import networkx as nx
 import random
 from geopy.distance import distance
+import simplekml
+import urllib.parse
 
 NEIGHBORHOODS = {
     "Kothrud": (18.5074, 73.8197),
@@ -107,3 +109,44 @@ def calculate_scenic_route(G, waypoints, vibe="Scenic"):
         return None, 0
         
     return full_path, total_length_m
+
+def generate_kml(G, route_nodes):
+    """
+    Generates a KML string for the given route.
+    """
+    kml = simplekml.Kml()
+    linestring = kml.newlinestring(name="VistaDrive Scenic Loop")
+    
+    # Extract coordinates in (lon, lat) format for simplekml
+    coords = []
+    for node in route_nodes:
+        lat = G.nodes[node]['y']
+        lon = G.nodes[node]['x']
+        coords.append((lon, lat))
+        
+    linestring.coords = coords
+    linestring.style.linestyle.color = simplekml.Color.blue
+    linestring.style.linestyle.width = 5
+    
+    return kml.kml()
+
+def generate_google_maps_url(waypoints):
+    """
+    Generates a Google Maps Directions URL using the waypoints.
+    """
+    origin = f"{waypoints[0][0]},{waypoints[0][1]}"
+    destination = origin
+    
+    # waypoints list contains S, A, B, C
+    # We pass A, B, C as intermediate waypoints
+    wp_str = "|".join([f"{wp[0]},{wp[1]}" for wp in waypoints[1:]])
+    
+    params = {
+        "api": "1",
+        "origin": origin,
+        "destination": destination,
+        "waypoints": wp_str,
+        "travelmode": "driving"
+    }
+    return "https://www.google.com/maps/dir/?" + urllib.parse.urlencode(params)
+

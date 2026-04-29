@@ -4,3 +4,5 @@ folium
 streamlit-folium
 networkx
 geopy
+simplekml
+streamlit-geolocation
